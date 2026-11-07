@@ -657,7 +657,7 @@ mod tests {
 
         // the driver path does load a System32 DLL, and loads that file even while a
         // copy of the same name from another directory is loaded. The name is a System32
-        //  this process hasn't loaded, so the copy loaded next is the only module of
+        // DLL this process hasn't loaded, so the copy loaded next is the only module of
         // that name and a bare-name load would return it
         let name = ["version.dll", "msimg32.dll", "wtsapi32.dll", "dbghelp.dll"]
             .into_iter()

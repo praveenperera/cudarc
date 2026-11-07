@@ -537,7 +537,10 @@ mod tests {
         use std::env;
         use std::ffi::OsString;
         use std::fs;
+        use std::os::windows::ffi::OsStringExt;
         use std::path::{Path, PathBuf};
+
+        use libloading::os::windows::Library as WindowsLibrary;
 
         /// Puts the working directory and environment back even when an assertion fails
         struct Restore(PathBuf, Option<OsString>, Option<OsString>);
@@ -636,6 +639,30 @@ mod tests {
             );
             drop(held);
         }
+
+        // the driver path does load a System32 DLL, and loads that file even while a
+        // copy of the same name from another directory is loaded
+        let module_path = |lib: WindowsLibrary| -> PathBuf {
+            #[link(name = "kernel32")]
+            extern "system" {
+                fn GetModuleFileNameW(module: isize, name: *mut u16, size: u32) -> u32;
+            }
+
+            let handle = lib.into_raw();
+            let mut buffer = [0u16; 1024];
+            let len = unsafe { GetModuleFileNameW(handle, buffer.as_mut_ptr(), 1024) };
+            let path = OsString::from_wide(&buffer[..len as usize]).into();
+            drop(unsafe { WindowsLibrary::from_raw(handle) });
+            path
+        };
+        place(&absolute, "version.dll");
+        let held = unsafe { libloading::Library::new(absolute.join("version.dll")) }.unwrap();
+        let driver = unsafe { super::open_first(&["version.dll".into()], true) };
+        let driver = driver.expect("did not load a DLL from System32");
+        let system_copy = system.join("version.dll");
+        assert_eq!(lower(&module_path(driver.into())), lower(&system_copy));
+        let other_copy = absolute.join("version.dll");
+        assert_eq!(lower(&module_path(held.into())), lower(&other_copy));
 
         // control: the default search does load a DLL from the current directory, so the
         // refusals above came from the search, not the setup

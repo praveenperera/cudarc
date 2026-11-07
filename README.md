@@ -46,8 +46,10 @@
 >
 > **Testing:** the loading tests run in CI on Linux and Windows without a GPU. On Linux,
 > stub libraries stand in for a toolkit and a pip wheel. On Windows, copies of a system
-> DLL stand in for CUDA's. **None of the fork's changes has run on a real GPU yet,
-> and nothing has run on a Windows machine with CUDA installed.** See
+> DLL stand in for CUDA's. On a Linux RTX 5090 with a CUDA 13.2 toolkit, cudarc's own
+> GPU tests fail exactly the same tests on the fork as on upstream 0.19.10, for both
+> `cuda-12040` and `cuda-13040` builds. **Nothing has run on Windows with a GPU or a
+> CUDA install, and cuDNN has not been loaded on a GPU.** See
 > [CHANGELOG.md](CHANGELOG.md). The rest of this README is upstream's.
 
 [![](https://dcbadge.vercel.app/api/server/AtUhGqBDP5)](https://discord.gg/AtUhGqBDP5)

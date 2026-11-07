@@ -54,8 +54,18 @@ Based on upstream cudarc 0.19.10.
   pip wheel (`tests/linux_sonames.rs`), and these tests fail on upstream 0.19.10.
   Windows uses copies of `version.dll` for the current directory, relative and absolute
   `PATH` entries, a broken DLL, `CUDA_PATH`, already-loaded modules and the
-  System32-only driver, including a `cuda.dll` already loaded from elsewhere
-  (`src/loading.rs`). On Linux, a stub whose constructor
+  System32-only driver. The driver cases cover a `cuda.dll` already loaded from elsewhere,
+  and a System32 DLL that must load from System32 while a same-named copy from another
+  directory is loaded (`src/loading.rs`). On Linux, a stub whose constructor
   leaves a marker file shows that a library that has loaded is not searched for again.
 - `cargo clippy` for `x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`.
-- Not run on a real GPU, and not run on a Windows machine with CUDA installed.
+- GPU: cudarc's own lib tests (`cargo test --lib -F <version>,f16`), run on Linux with
+  an RTX 5090, driver 595.99.02 and the CUDA 13.2 toolkit, for both this fork and
+  upstream 0.19.10. Both fail the same tests:
+  - `cuda-12040`: 4 tests. Grouped GEMM's deliberate CUDA 12.5+ panic, a pinned-copy
+    timing check, and CUDA 13's NVRTC rejecting `compute_53`.
+  - `cuda-13040`: 51 tests, failing in handle creation. The cause was not
+    investigated, since upstream fails the same tests on the same machine.
+  The fork passes every other test, plus its own loading tests.
+- Not run: anything on Windows with a GPU or a CUDA install, cuDNN on a GPU, and the
+  consumers (cudakit, sam3rs, scriptrs, speakrs) against this fork.

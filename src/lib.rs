@@ -197,73 +197,12 @@ pub mod types;
 
 #[cfg(feature = "dynamic-loading")]
 pub(crate) fn panic_no_lib_found<S: std::fmt::Debug>(lib_name: &str, choices: &[S]) -> ! {
-    panic!("Unable to dynamically load the \"{lib_name}\" shared library - searched for library names: {choices:?}. Ensure that `LD_LIBRARY_PATH` has the correct path to the installed library. If the shared library is present on the system under a different name than one of those listed above, please open a GitHub issue.");
-}
-
-/// Opens one candidate name for a dynamically loaded library.
-///
-/// With `windows_system32_only`, Windows looks for it in System32 alone. The CUDA driver
-/// (`nvcuda.dll`) is always installed there, and the default search would otherwise check
-/// the current working directory before `PATH`: the driver's candidate names start with
-/// `cuda.dll`, which System32 never has, so a `cuda.dll` planted in the directory a
-/// program runs from would load, and run its code, ahead of the real driver. Other
-/// platforms, and other libraries, use the default search.
-///
-/// # Safety
-/// Loading a library runs its initialisation routines, as with [`libloading::Library::new`].
-#[cfg(feature = "dynamic-loading")]
-pub(crate) unsafe fn load_lib(
-    name: &str,
-    windows_system32_only: bool,
-) -> Result<::libloading::Library, ::libloading::Error> {
-    #[cfg(windows)]
-    if windows_system32_only {
-        use ::libloading::os::windows::{Library, LOAD_LIBRARY_SEARCH_SYSTEM32};
-        return Library::load_with_flags(name, LOAD_LIBRARY_SEARCH_SYSTEM32).map(Into::into);
-    }
-    #[cfg(not(windows))]
-    let _ = windows_system32_only;
-    ::libloading::Library::new(name)
+    panic!("Unable to dynamically load the \"{lib_name}\" shared library - searched for library names: {choices:?}. Ensure that `LD_LIBRARY_PATH` (on Windows, `PATH` or `CUDA_PATH`) has the correct path to the installed library; on Windows the current directory is never searched. If the shared library is present on the system under a different name than one of those listed above, please open a GitHub issue.");
 }
 
 #[cfg(feature = "dynamic-loading")]
-pub fn get_lib_name_candidates(lib_name: &str) -> std::vec::Vec<std::string::String> {
-    use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
-
-    let pointer_width = if cfg!(target_pointer_width = "32") {
-        "32"
-    } else if cfg!(target_pointer_width = "64") {
-        "64"
-    } else {
-        panic!("Unsupported target pointer width")
-    };
-
-    let major = env!("CUDA_MAJOR_VERSION");
-    let minor = env!("CUDA_MINOR_VERSION");
-
-    [
-        std::format!("{DLL_PREFIX}{lib_name}{DLL_SUFFIX}"),
-        std::format!("{DLL_PREFIX}{lib_name}{pointer_width}{DLL_SUFFIX}"),
-        std::format!("{DLL_PREFIX}{lib_name}{pointer_width}_{major}{DLL_SUFFIX}"),
-        std::format!("{DLL_PREFIX}{lib_name}{pointer_width}_{major}{minor}{DLL_SUFFIX}"),
-        std::format!("{DLL_PREFIX}{lib_name}{pointer_width}_{major}{minor}_0{DLL_SUFFIX}"),
-        std::format!("{DLL_PREFIX}{lib_name}{pointer_width}_{major}0_{minor}{DLL_SUFFIX}"),
-        // See issue #242
-        std::format!("{DLL_PREFIX}{lib_name}{pointer_width}_10{DLL_SUFFIX}"),
-        std::format!("{DLL_PREFIX}{lib_name}{pointer_width}_11{DLL_SUFFIX}"),
-        std::format!("{DLL_PREFIX}{lib_name}{pointer_width}_12{DLL_SUFFIX}"),
-        // See issue #246
-        std::format!("{DLL_PREFIX}{lib_name}{pointer_width}_{major}0_0{DLL_SUFFIX}"),
-        // See issue #260
-        std::format!("{DLL_PREFIX}{lib_name}{pointer_width}_9{DLL_SUFFIX}"),
-        // See issue #274
-        std::format!("{DLL_PREFIX}{lib_name}{DLL_SUFFIX}.{major}"),
-        std::format!("{DLL_PREFIX}{lib_name}{DLL_SUFFIX}.12"),
-        std::format!("{DLL_PREFIX}{lib_name}{DLL_SUFFIX}.11"),
-        std::format!("{DLL_PREFIX}{lib_name}{DLL_SUFFIX}.10"),
-        std::format!("{DLL_PREFIX}{lib_name}{DLL_SUFFIX}.9"),
-        // See issue #296
-        std::format!("{DLL_PREFIX}{lib_name}{DLL_SUFFIX}.1"),
-    ]
-    .into()
-}
+mod loading;
+#[cfg(feature = "dynamic-loading")]
+pub use loading::get_lib_name_candidates;
+#[cfg(feature = "dynamic-loading")]
+pub(crate) use loading::open_culib;

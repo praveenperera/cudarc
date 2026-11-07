@@ -241,38 +241,27 @@ impl BindingMerger {
 
             #adapters
 
+            /// This module's library, once loaded; shared by [`is_culib_present`] and
+            /// [`culib`], so neither searches again after the library has loaded
+            #[cfg(feature = "dynamic-loading")]
+            static CULIB: OnceLock<::libloading::Library> = OnceLock::new();
+
+            /// Whether this module's library loads. A library that does stays loaded
+            /// for [`culib`]
             #[cfg(feature = "dynamic-loading")]
             pub unsafe fn is_culib_present() -> bool {
-                let lib_names = [#(#lib_names),*];
-                let choices = lib_names
-                    .iter()
-                    .map(|l| crate::get_lib_name_candidates(l))
-                    .flatten();
-                for choice in choices {
-                    if crate::load_lib(&choice, #windows_system32_only).is_ok() {
-                        return true;
-                    }
-                }
-                false
+                crate::open_culib(&CULIB, &[#(#lib_names),*], #windows_system32_only).is_ok()
             }
 
+            /// This module's library, loaded on first use
+            ///
+            /// # Panics
+            /// When no candidate name loads.
             #[cfg(feature = "dynamic-loading")]
             pub unsafe fn culib() -> &'static ::libloading::Library {
-                static LIB: OnceLock<::libloading::Library> = OnceLock::new();
-                LIB.get_or_init(|| {
-                    let lib_names = std::vec![#(#lib_names),*];
-                    let choices: std::vec::Vec<_> = lib_names
-                        .iter()
-                        .map(|l| crate::get_lib_name_candidates(l))
-                        .flatten()
-                        .collect();
-                    for choice in choices.iter() {
-                        if let Ok(lib) = crate::load_lib(choice, #windows_system32_only) {
-                            return lib;
-                        }
-                    }
-                    crate::panic_no_lib_found(lib_names[0], &choices);
-                })
+                let lib_names = [#(#lib_names),*];
+                crate::open_culib(&CULIB, &lib_names, #windows_system32_only)
+                    .unwrap_or_else(|choices| crate::panic_no_lib_found(lib_names[0], &choices))
             }
         })
     }

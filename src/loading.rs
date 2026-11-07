@@ -64,19 +64,24 @@ unsafe fn open_first(choices: &[String], windows_system32_only: bool) -> Option<
 
 /// Opens the first of `choices` that loads, never from the current directory
 ///
-/// With `windows_system32_only`, each name is looked for in System32 alone. The CUDA
-/// driver (`nvcuda.dll`) is always installed there, and its first candidate name,
-/// `cuda.dll`, never is, so the default search would reach the current directory before
-/// the real driver. Every other library uses [`windows::open`].
+/// With `windows_system32_only`, each name is loaded by its full path in System32 alone.
+/// The CUDA driver (`nvcuda.dll`) is always installed there, and its first candidate
+/// name, `cuda.dll`, never is, so the default search would reach the current directory
+/// before the real driver. A full path also keeps Windows from handing back a module
+/// loaded from elsewhere under the same name, as a bare-name load would even with
+/// `LOAD_LIBRARY_SEARCH_SYSTEM32`. Every other library uses [`windows::open`].
 #[cfg(windows)]
 unsafe fn open_first(choices: &[String], windows_system32_only: bool) -> Option<Library> {
     use libloading::os::windows::{Library as WindowsLibrary, LOAD_LIBRARY_SEARCH_SYSTEM32};
 
     if windows_system32_only {
+        let system32 = windows::system32()?;
         return choices
             .iter()
-            .find_map(|choice| {
-                WindowsLibrary::load_with_flags(choice, LOAD_LIBRARY_SEARCH_SYSTEM32).ok()
+            .map(|choice| system32.join(choice))
+            .filter(|file| file.is_file())
+            .find_map(|file| {
+                WindowsLibrary::load_with_flags(&file, LOAD_LIBRARY_SEARCH_SYSTEM32).ok()
             })
             .map(Into::into);
     }
@@ -259,6 +264,26 @@ pub(crate) mod windows {
             dirs.extend([bin.join("x64"), bin]);
         }
         dirs
+    }
+
+    /// The System32 directory, from `GetSystemDirectoryW` rather than the environment
+    #[cfg(windows)]
+    pub(crate) fn system32() -> Option<PathBuf> {
+        use std::ffi::OsString;
+        use std::os::windows::ffi::OsStringExt;
+
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetSystemDirectoryW(buffer: *mut u16, size: u32) -> u32;
+        }
+
+        // the system directory is never longer than MAX_PATH
+        let mut buffer = [0u16; 260];
+        let len = unsafe { GetSystemDirectoryW(buffer.as_mut_ptr(), buffer.len() as u32) };
+        let len = usize::try_from(len)
+            .ok()
+            .filter(|len| (1..buffer.len()).contains(len))?;
+        Some(OsString::from_wide(&buffer[..len]).into())
     }
 
     /// Opens `name` by the steps in the module docs, or returns `None`
@@ -590,12 +615,26 @@ mod tests {
         drop(held);
         env::set_var("PATH", &absolute);
 
-        // the driver loads from System32 alone, even when a `cuda.dll` sits on PATH
+        // the driver loads from System32 alone, even when a `cuda.dll` sits on PATH or a
+        // module of that name is already loaded from elsewhere
+        let system32 = super::windows::system32().unwrap();
+        // Windows paths compare without case, and GetSystemDirectoryW often answers in
+        // a different case from %SystemRoot%
+        let lower = |path: &Path| path.to_string_lossy().to_lowercase();
+        assert_eq!(lower(&system32), lower(&system));
         if !system.join("cuda.dll").exists() {
             place(&cwd, "cuda.dll");
             place(&absolute, "cuda.dll");
             let driver = unsafe { super::open_first(&["cuda.dll".into()], true) };
             assert!(driver.is_none(), "loaded the driver from outside System32");
+
+            let held = unsafe { libloading::Library::new(absolute.join("cuda.dll")) }.unwrap();
+            let driver = unsafe { super::open_first(&["cuda.dll".into()], true) };
+            assert!(
+                driver.is_none(),
+                "reused a driver name loaded from outside System32"
+            );
+            drop(held);
         }
 
         // control: the default search does load a DLL from the current directory, so the

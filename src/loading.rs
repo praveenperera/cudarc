@@ -540,7 +540,7 @@ mod tests {
         use std::os::windows::ffi::OsStringExt;
         use std::path::{Path, PathBuf};
 
-        use libloading::os::windows::Library as WindowsLibrary;
+        use libloading::os::windows::{Library as WindowsLibrary, LOAD_LIBRARY_SEARCH_SYSTEM32};
 
         /// Puts the working directory and environment back even when an assertion fails
         struct Restore(PathBuf, Option<OsString>, Option<OsString>);
@@ -640,9 +640,8 @@ mod tests {
             drop(held);
         }
 
-        // the driver path does load a System32 DLL, and loads that file even while a
-        // copy of the same name from another directory is loaded
-        let module_path = |lib: WindowsLibrary| -> PathBuf {
+        // the file a module was loaded from, handing the module back so it stays loaded
+        let module_path = |lib: WindowsLibrary| -> (PathBuf, WindowsLibrary) {
             #[link(name = "kernel32")]
             extern "system" {
                 fn GetModuleFileNameW(module: isize, name: *mut u16, size: u32) -> u32;
@@ -652,17 +651,35 @@ mod tests {
             let mut buffer = [0u16; 1024];
             let len = unsafe { GetModuleFileNameW(handle, buffer.as_mut_ptr(), 1024) };
             let path = OsString::from_wide(&buffer[..len as usize]).into();
-            drop(unsafe { WindowsLibrary::from_raw(handle) });
-            path
+            (path, unsafe { WindowsLibrary::from_raw(handle) })
         };
-        place(&absolute, "version.dll");
-        let held = unsafe { libloading::Library::new(absolute.join("version.dll")) }.unwrap();
-        let driver = unsafe { super::open_first(&["version.dll".into()], true) };
+        let path_of = |lib: WindowsLibrary| lower(&module_path(lib).0);
+
+        // the driver path does load a System32 DLL, and loads that file even while a
+        // copy of the same name from another directory is loaded. The name is a System32
+        //  this process hasn't loaded, so the copy loaded next is the only module of
+        // that name and a bare-name load would return it
+        let name = ["version.dll", "msimg32.dll", "wtsapi32.dll", "dbghelp.dll"]
+            .into_iter()
+            .find(|name| {
+                system.join(name).is_file() && WindowsLibrary::open_already_loaded(*name).is_err()
+            })
+            .expect("every candidate System32 DLL is already loaded");
+        fs::copy(system.join(name), absolute.join(name)).unwrap();
+        let other_copy = absolute.join(name);
+        let held = unsafe { libloading::Library::new(&other_copy) }.unwrap();
+        let (held_path, held) = module_path(held.into());
+        assert_eq!(lower(&held_path), lower(&other_copy));
+
+        // control: a bare name, even restricted to System32, returns the copy from
+        // elsewhere, so the check below catches a driver load that regressed to one
+        let bare = unsafe { WindowsLibrary::load_with_flags(name, LOAD_LIBRARY_SEARCH_SYSTEM32) };
+        assert_eq!(path_of(bare.unwrap()), lower(&other_copy));
+
+        let driver = unsafe { super::open_first(&[name.into()], true) };
         let driver = driver.expect("did not load a DLL from System32");
-        let system_copy = system.join("version.dll");
-        assert_eq!(lower(&module_path(driver.into())), lower(&system_copy));
-        let other_copy = absolute.join("version.dll");
-        assert_eq!(lower(&module_path(held.into())), lower(&other_copy));
+        assert_eq!(path_of(driver.into()), lower(&system.join(name)));
+        drop(held);
 
         // control: the default search does load a DLL from the current directory, so the
         // refusals above came from the search, not the setup

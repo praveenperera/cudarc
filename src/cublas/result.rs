@@ -137,7 +137,12 @@ pub unsafe fn hgemm(
 ) -> Result<(), CublasError> {
     // NOTE: for some reason cublasHgemm is only included in header files if using c++. Therefore it
     // is not included in the bindgen exports. So we manually link to the library & load the symbol here.
+    // the bindings' own handle, so this is the same cuBLAS, found the same way
+    #[cfg(feature = "dynamic-loading")]
+    let lib = sys::culib();
+    #[cfg(not(feature = "dynamic-loading"))]
     static LIB: std::sync::OnceLock<libloading::Library> = std::sync::OnceLock::new();
+    #[cfg(not(feature = "dynamic-loading"))]
     let lib = LIB
         .get_or_init(|| libloading::Library::new(libloading::library_filename("cublas")).unwrap());
     #[allow(non_snake_case)]
@@ -257,7 +262,12 @@ pub unsafe fn hgemm_strided_batched(
 ) -> Result<(), CublasError> {
     // NOTE: for some reason cublasHgemm is only included in header files if using c++. Therefore it
     // is not included in the bindgen exports. So we manually link to the library & load the symbol here.
+    // the bindings' own handle, so this is the same cuBLAS, found the same way
+    #[cfg(feature = "dynamic-loading")]
+    let lib = sys::culib();
+    #[cfg(not(feature = "dynamic-loading"))]
     static LIB: std::sync::OnceLock<libloading::Library> = std::sync::OnceLock::new();
+    #[cfg(not(feature = "dynamic-loading"))]
     let lib = LIB
         .get_or_init(|| libloading::Library::new(libloading::library_filename("cublas")).unwrap());
     #[allow(non_snake_case)]

@@ -1,0 +1,24 @@
+on: [push, pull_request, workflow_dispatch]
+
+# The library-loading tests need no GPU or CUDA install: Linux builds stub libraries with
+# `cc`, and Windows loads copies of a system DLL
+jobs:
+  loading-tests:
+    name: loading-tests
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        version: [cuda-12040, cuda-13040]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo test -F ${{ matrix.version }} --lib loading
+      - run: cargo test -F ${{ matrix.version }} --test linux_sonames
+      - run: cargo clippy -F ${{ matrix.version }} --lib --tests -- -D warnings

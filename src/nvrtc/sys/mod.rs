@@ -525,28 +525,22 @@ pub unsafe fn nvrtcVersion(major: *mut ::core::ffi::c_int, minor: *mut ::core::f
         nvrtcVersion(major, minor)
     }
 }
+#[doc = r" This module's library, once loaded; shared by [`is_culib_present`] and"]
+#[doc = r" [`culib`], so neither searches again after the library has loaded"]
+#[cfg(feature = "dynamic-loading")]
+static CULIB: OnceLock<::libloading::Library> = OnceLock::new();
+#[doc = r" Whether this module's library loads. A library that does stays loaded"]
+#[doc = r" for [`culib`]"]
 #[cfg(feature = "dynamic-loading")]
 pub unsafe fn is_culib_present() -> bool {
-    let lib_names = ["nvrtc"];
-    let choices = lib_names.iter().map(|l| crate::get_lib_name_candidates(l)).flatten();
-    for choice in choices {
-        if ::libloading::Library::new(choice).is_ok() {
-            return true;
-        }
-    }
-    false
+    crate::open_culib(&CULIB, &["nvrtc"], false).is_ok()
 }
+#[doc = r" This module's library, loaded on first use"]
+#[doc = r""]
+#[doc = r" # Panics"]
+#[doc = r" When no candidate name loads."]
 #[cfg(feature = "dynamic-loading")]
 pub unsafe fn culib() -> &'static ::libloading::Library {
-    static LIB: OnceLock<::libloading::Library> = OnceLock::new();
-    LIB.get_or_init(|| {
-        let lib_names = std::vec!["nvrtc"];
-        let choices: std::vec::Vec<_> = lib_names.iter().map(|l| crate::get_lib_name_candidates(l)).flatten().collect();
-        for choice in choices.iter() {
-            if let Ok(lib) = ::libloading::Library::new(choice) {
-                return lib;
-            }
-        }
-        crate::panic_no_lib_found(lib_names[0], &choices);
-    })
+    let lib_names = ["nvrtc"];
+    crate::open_culib(&CULIB, &lib_names, false).unwrap_or_else(|choices| crate::panic_no_lib_found(lib_names[0], &choices))
 }

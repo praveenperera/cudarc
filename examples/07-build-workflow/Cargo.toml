@@ -11,4 +11,4 @@ cc = "1.0.82"
 regex = "1.9.3"
 
 [dependencies]
-cudarc = { path = "../.." }
+cudarc = { package = "cudakit-cudarc", path = "../.." }

@@ -109,14 +109,20 @@ struct BindingMerger {
     lib_names: Vec<String>,
     n_versions: usize,
     feature_prefix: String,
+    windows_system32_only: bool,
 }
 
 impl BindingMerger {
-    pub fn new(lib_names: Vec<String>, feature_prefix: String) -> Self {
+    pub fn new(
+        lib_names: Vec<String>,
+        feature_prefix: String,
+        windows_system32_only: bool,
+    ) -> Self {
         Self {
             lib_names,
             n_versions: 0,
             feature_prefix,
+            windows_system32_only,
             ..Default::default()
         }
     }
@@ -193,6 +199,7 @@ impl BindingMerger {
         let consts = self.write_to_output(&self.consts).expect("Write to output");
 
         let lib_names = &self.lib_names;
+        let windows_system32_only = self.windows_system32_only;
 
         let adapters = self
             .create_unified_adapters(&self.functions)
@@ -234,38 +241,27 @@ impl BindingMerger {
 
             #adapters
 
+            /// This module's library, once loaded; shared by [`is_culib_present`] and
+            /// [`culib`], so neither searches again after the library has loaded
+            #[cfg(feature = "dynamic-loading")]
+            static CULIB: OnceLock<::libloading::Library> = OnceLock::new();
+
+            /// Whether this module's library loads. A library that does stays loaded
+            /// for [`culib`]
             #[cfg(feature = "dynamic-loading")]
             pub unsafe fn is_culib_present() -> bool {
-                let lib_names = [#(#lib_names),*];
-                let choices = lib_names
-                    .iter()
-                    .map(|l| crate::get_lib_name_candidates(l))
-                    .flatten();
-                for choice in choices {
-                    if ::libloading::Library::new(choice).is_ok() {
-                        return true;
-                    }
-                }
-                false
+                crate::open_culib(&CULIB, &[#(#lib_names),*], #windows_system32_only).is_ok()
             }
 
+            /// This module's library, loaded on first use
+            ///
+            /// # Panics
+            /// When no candidate name loads.
             #[cfg(feature = "dynamic-loading")]
             pub unsafe fn culib() -> &'static ::libloading::Library {
-                static LIB: OnceLock<::libloading::Library> = OnceLock::new();
-                LIB.get_or_init(|| {
-                    let lib_names = std::vec![#(#lib_names),*];
-                    let choices: std::vec::Vec<_> = lib_names
-                        .iter()
-                        .map(|l| crate::get_lib_name_candidates(l))
-                        .flatten()
-                        .collect();
-                    for choice in choices.iter() {
-                        if let Ok(lib) = ::libloading::Library::new(choice) {
-                            return lib;
-                        }
-                    }
-                    crate::panic_no_lib_found(lib_names[0], &choices);
-                })
+                let lib_names = [#(#lib_names),*];
+                crate::open_culib(&CULIB, &lib_names, #windows_system32_only)
+                    .unwrap_or_else(|choices| crate::panic_no_lib_found(lib_names[0], &choices))
             }
         })
     }
@@ -368,11 +364,13 @@ pub fn merge<P: AsRef<Path>>(
     output_filename: P,
     lib_names: Vec<String>,
     feature_prefix: &str,
+    windows_system32_only: bool,
 ) -> Result<()> {
     let binding_dir = binding_dir.as_ref();
     let entries: Vec<_> = fs::read_dir(binding_dir)?.collect::<std::io::Result<_>>()?;
 
-    let mut merger = BindingMerger::new(lib_names, feature_prefix.to_string());
+    let mut merger =
+        BindingMerger::new(lib_names, feature_prefix.to_string(), windows_system32_only);
     for entry in entries {
         let path = entry.path();
         if path.is_file() {
@@ -412,6 +410,7 @@ pub fn merge_bindings(modules: &[ModuleConfig]) -> Result<()> {
                 format!("../src/{}/sys/mod.rs", config.cudarc_name),
                 config.libs.iter().map(|&s| s.into()).collect(),
                 config.feature_prefix,
+                config.windows_system32_only,
             )?;
             pb.inc(1);
             Ok(())

@@ -1,5 +1,57 @@
 # cudarc: minimal and safe api over the cuda toolkit
 
+> **This is `cudakit-cudarc`, a fork of [cudarc](https://github.com/chelsea0x3b/cudarc)
+> 0.19.10 that changes only how the CUDA libraries are found and opened at runtime
+> (the `dynamic-loading` feature).** The library is still named `cudarc`, so switching
+> to the fork needs no code changes:
+>
+> ```toml
+> cudarc = { package = "cudakit-cudarc", version = "0.19.10" }
+> ```
+>
+> What the fork changes:
+>
+> - **Linux:** versioned sonames such as `libcublas.so.13` are tried before the
+>   unversioned dev symlink `libcublas.so`. The soname the bindings' own CUDA version
+>   ships comes first, such as `libcublas.so.12` or `libcufft.so.11` for CUDA 12. Every
+>   other major follows, newest first, including CUDA 13's. Opening the dev symlink first
+>   could load a second cuBLAS next to one the process already held, or pair a toolkit's
+>   cuBLAS with another install's cuBLASLt.
+> - **Windows:** CUDA 13's DLL names (`cublas64_13.dll`, `cublasLt64_13.dll`,
+>   `nvrtc64_130_0.dll`) are tried for every build, as are CUDA 12's and cuDNN 9's
+>   `cudnn64_9.dll`. `%CUDA_PATH%\bin\x64`, where CUDA 13 keeps its DLLs, and
+>   `%CUDA_PATH%\bin` are searched after `PATH`.
+> - **Windows:** a library is never loaded from the current directory or a relative
+>   `PATH` entry, where the default DLL search would have picked up a planted DLL. The
+>   driver loads only by its full path in System32, so a module of the same name loaded
+>   from elsewhere is never taken for it. Every other library comes from a module already
+>   loaded under its name, the executable's directory, System32, directories added
+>   with `AddDllDirectory`, absolute `PATH` entries or `CUDA_PATH`. Each DLL's own
+>   imports come from its own directory, and no step falls back to the default search.
+>   Because of that, a DLL whose imports are in another directory that only `PATH`
+>   reaches won't load until those imports are loaded or their directory is added with
+>   `AddDllDirectory`, which Python's `os.add_dll_directory` does. One example is
+>   NVIDIA's pip wheels, which put each package in its own `bin` directory. A CUDA
+>   toolkit keeps all its DLLs in one directory, so this doesn't affect it.
+>   These rules cover the loads cudarc makes itself. A library can load more DLLs at
+>   runtime with its own search. For example, cuDNN 9's `cudnn64_9.dll` loads
+>   `cudnn_graph64_9.dll` and its other sublibraries by bare name, so a cuDNN outside
+>   the executable's directory can still pick up a sublibrary planted in the current
+>   directory.
+> - `cublas::result::hgemm` and `hgemm_strided_batched` use the bindings' cuBLAS handle,
+>   instead of opening `cublas.dll` or `libcublas.so` themselves through the default
+>   search.
+> - `is_culib_present()` shares `culib()`'s handle. A library that is found stays
+>   loaded, and neither function searches again once it has loaded.
+>
+> **Testing:** the loading tests run in CI on Linux and Windows without a GPU. On Linux,
+> stub libraries stand in for a toolkit and a pip wheel. On Windows, copies of a system
+> DLL stand in for CUDA's. On a Linux RTX 5090 with a CUDA 13.2 toolkit, cudarc's own
+> GPU tests fail exactly the same tests on the fork as on upstream 0.19.10, for both
+> `cuda-12040` and `cuda-13040` builds. **Nothing has run on Windows with a GPU or a
+> CUDA install, and cuDNN has not been loaded on a GPU.** See
+> [CHANGELOG.md](CHANGELOG.md). The rest of this README is upstream's.
+
 [![](https://dcbadge.vercel.app/api/server/AtUhGqBDP5)](https://discord.gg/AtUhGqBDP5)
 [![crates.io](https://img.shields.io/crates/v/cudarc?style=for-the-badge)](https://crates.io/crates/cudarc)
 [![docs.rs](https://img.shields.io/docsrs/cudarc?label=docs.rs%20latest&style=for-the-badge)](https://docs.rs/cudarc)

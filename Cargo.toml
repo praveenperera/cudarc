@@ -1,14 +1,19 @@
 [package]
-name = "cudarc"
+# a fork of cudarc with library-loading fixes; the library is still `cudarc`, so
+# `cudarc = { package = "cudakit-cudarc", ... }` needs no code changes
+name = "cudakit-cudarc"
 version = "0.19.10"
 edition = "2021"
-authors = ["Chelsea Lowman <clowman1993@gmail.com>"]
+authors = [
+    "Chelsea Lowman <clowman1993@gmail.com>",
+    "Praveen Perera <me@praveenperera.com>",
+]
 license = "MIT OR Apache-2.0"
 
-description = "Safe and minimal CUDA bindings"
-homepage = "https://github.com/chelsea0x3b/cudarc"
-documentation = "https://docs.rs/cudarc"
-repository = "https://github.com/chelsea0x3b/cudarc"
+description = "Fork of cudarc, safe and minimal CUDA bindings, with safer library loading on Linux and Windows"
+homepage = "https://github.com/praveenperera/cudarc"
+documentation = "https://docs.rs/cudakit-cudarc"
+repository = "https://github.com/praveenperera/cudarc"
 readme = "README.md"
 
 keywords = ["cuda", "nvidia", "gpu", "cudnn", "cublas"]
@@ -19,6 +24,9 @@ categories = [
     "no-std",
     "science",
 ]
+
+[lib]
+name = "cudarc"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
